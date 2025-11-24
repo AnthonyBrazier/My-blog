@@ -1,0 +1,78 @@
+---
+title: "Atividade 1 - Cotação Dolar"
+author: "Anthony Brazier Leite"
+date: "2025-11-23"
+categories: [JSON, PYTHON, CODE,GRÁFICO]
+image: "dolar.jpg"
+jupyter: python3
+---
+
+Neste Post eu mostro uma forma em *python* de fazer uma pesquisa em um site onde apareçe informações das cotações do dolar em uma determinada época em forma de gráfico.
+
+```{python}
+import pandas as pd
+import requests
+import calendar
+from datetime import datetime
+import plotly.express as px
+
+def cotacao(mmyyyy: str):
+    """
+    Recebe uma string no formato 'MMYYYY' e retorna
+    um gráfico de linha com as cotações diárias do dólar PTAX.
+    """
+
+    first_date = datetime.strptime(mmyyyy, "%m%Y")
+    last_date = first_date.replace(
+        day = calendar.monthrange(first_date.year, first_date.month)[1]
+    )
+
+    # Converter para: mm-dd-yyyy
+    data_inicial = first_date.strftime("%m-%d-%Y")
+    data_final = last_date.strftime("%m-%d-%Y")
+
+    # 2  URL da API
+    url = (
+        "https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/"
+        "CotacaoDolarPeriodo(dataInicial=@dataInicial,dataFinalCotacao=@dataFinalCotacao)"
+        f"?@dataInicial='{data_inicial}'&@dataFinalCotacao='{data_final}'"
+        "&$top=100&$format=json"
+    )
+
+    # Puxa pela URL
+    response = requests.get(url)
+    dados = response.json()["value"]
+
+    # Cria DataFrame
+    df = pd.DataFrame(dados)
+    df["data"] = pd.to_datetime(df["dataHoraCotacao"]).dt.date
+    df = df[["data", "cotacaoCompra", "cotacaoVenda"]]
+
+    # Remove duplicados e ordena
+    df = df.groupby("data").mean().reset_index()
+    df = df.sort_values("data")
+
+    # Feriados e finais de semana 
+    idx = pd.date_range(start=first_date, end=last_date)
+    df = df.set_index("data").reindex(idx)
+    df = df.fillna(method="ffill")
+    df.index.name = "data"
+    df = df.reset_index()
+
+    # Plotly
+    fig = px.line(
+        df,
+        x="data",
+        y="cotacaoVenda",
+        title=f"Cotação do Dólar  {mmyyyy[:2]}/{mmyyyy[2:]}",
+        labels={"cotacaoVenda": "Cotação (Venda)", "data": "Data"}
+    )
+
+    fig.update_layout(yaxis_tickformat=".2f")
+    return fig
+
+# Escolha da data
+
+cotacao("042013")
+
+```

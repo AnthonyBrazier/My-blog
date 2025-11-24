@@ -1,0 +1,98 @@
+---
+title: "Atividade 2 - API SPTRANS"
+author: "Anthony Brazier Leite"
+date: "2025-11-23"
+categories: [API, PYTHON, CODE]
+image: "SPTrans_logo.png"
+jupyter: python3
+---
+
+Neste Post eu mostro uma forma em *python* utilizando de uma **API do SPTRANS** para mostrar as paradas e os veículos de uma determinada linha.
+
+```{python}
+
+import os
+import requests
+from dotenv import load_dotenv
+from IPython.display import HTML, display
+import folium
+import math
+
+load_dotenv()
+token = os.getenv("SPTRANS_TOKEN")
+
+s = requests.Session()
+
+def fetch_paradas_pos(codigo_linha=2506):
+    """Tenta buscar paradas e posições da API; retorna (paradas, pos_list).
+    Em caso de erro ou token ausente, retorna dados de demonstração."""
+    if not token:
+        print("SPTRANS_TOKEN não encontrado — usando dados de demonstração.")
+        return demo_paradas, demo_pos
+
+    try:
+        # Verificação do token
+        auth = s.post(f"https://api.olhovivo.sptrans.com.br/v2.1/Login/Autenticar?token={token}", timeout=10)
+        print("Login response:", auth.text)
+
+        # Busca paradas da linha
+        r_par = s.get(f"https://api.olhovivo.sptrans.com.br/v2.1/Parada/BuscarParadasPorLinha?codigoLinha={codigo_linha}", timeout=10)
+        paradas = r_par.json()
+
+        # Busca posições dos veículos
+
+        r_pos = s.get(f"https://api.olhovivo.sptrans.com.br/v2.1/Posicao/Linha?codigoLinha={codigo_linha}", timeout=10)
+        pos_json = r_pos.json()
+        pos_list = pos_json.get("vs") if isinstance(pos_json, dict) else []
+
+        if not paradas:
+            print("API retornou 0 paradas — usando dados de demonstração.")
+            return demo_paradas, demo_pos
+
+        return paradas, pos_list
+
+    except Exception as e:
+        print("Erro ao acessar API Olho Vivo:", e)
+        print("Usando dados de demonstração.")
+        return demo_paradas, demo_pos
+
+
+paradas, pos_list = fetch_paradas_pos(codigo_linha=2506)
+
+print(f"Usando {len(paradas)} paradas e {len(pos_list)} posições (veículos).")
+
+# Coloca o mapa no centro da cidade
+
+def mean_center(points):
+    lat = [p["py"] for p in points]
+    lon = [p["px"] for p in points]
+    return (sum(lat) / len(lat), sum(lon) / len(lon))
+
+center = mean_center(paradas) if paradas else (-23.534564, -46.654302)
+
+# Construi mapa
+
+m = folium.Map(location=center, zoom_start=14)
+
+for p in paradas:
+    folium.Marker(location=[p["py"], p["px"]], popup=f"{p.get('np')}\n{p.get('ed','')}").add_to(m)
+
+# Adiciona veículos
+
+for v in pos_list:
+    try:
+        folium.CircleMarker(location=[v["py"], v["px"]], radius=6, color="red", fill=True, fill_opacity=0.8,
+                            popup=f"Veículo: {v.get('p')}\nHora: {v.get('ta')}").add_to(m)
+    except Exception:
+        pass
+
+# Salva no HTML
+
+output = f"paradas_linha.html"
+m.save(output)
+print(f"Mapa salvo em: {output}")
+
+# Mostra o mapa pelo quarto
+
+display(HTML(m._repr_html_()))
+```
